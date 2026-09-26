@@ -22,3 +22,18 @@ const cancelledId=crypto.randomUUID();await call('/api/runs','POST',{id:cancelle
 const raceId=crypto.randomUUID();await call('/api/runs','POST',{id:raceId,projectId,modelHash:hash,label:'Concurrent completion'});const race=await Promise.all([call('/api/runs','PATCH',{id:raceId,status:'completed',elapsedMs:300,report}),call('/api/runs','PATCH',{id:raceId,status:'cancelled',elapsedMs:1,error:'Cancelled'})]);const values=await Promise.all(race.map(r=>r.json()));assert.equal(values[0].run.status,values[1].run.status);
 r=await fetch(base+'/api/runs?projectId='+projectId,{headers:owner});assert.equal((await r.json()).runs.length,3);
 console.log('PASS: model pinning, start idempotence, original units, owner isolation, server parsing, immutable final state, cancellation, concurrent completion, report round trip.');
+
+const scenarioId=crypto.randomUUID();const experiment={baselineId:id,spec:{kind:'diameter',asset:'C1',percent:25,targetNode:'J1'}};
+r=await call('/api/runs','POST',{id:scenarioId,projectId,modelHash:hash,label:'Pipe +25%',experiment});assert.equal(r.status,200,await r.clone().text());const scenario=(await r.json()).run;assert.equal(scenario.experiment.changes[0].after,.375);assert.notEqual(scenario.experiment.inputHash,hash);
+r=await fetch(base+'/api/runs?id='+scenarioId+'&input=1',{headers:owner});const modified=await r.text();assert.equal(modified,input.replace('C1 CIRCULAR 0.30','C1 CIRCULAR 0.375'));
+r=await fetch(base+'/api/runs?id='+scenarioId+'&input=1',{headers:other});assert.equal(r.status,404);
+const scenarioReport=(await runEngine(modified)).report;r=await call('/api/runs','PATCH',{id:scenarioId,status:'completed',elapsedMs:100,report:scenarioReport});assert.equal(r.status,200,await r.clone().text());const finished=(await r.json()).run;assert.ok(finished.comparison.volumeReduction>0);assert.ok(finished.comparison.worsenedNodes.includes('J2'));assert.equal(finished.comparison.eligible,false);
+r=await call('/api/runs','POST',{id:crypto.randomUUID(),projectId,modelHash:hash,label:'Invalid parameter',experiment:{...experiment,spec:{...experiment.spec,percent:500}}});assert.equal(r.status,400);
+r=await call('/api/runs','POST',{id:crypto.randomUUID(),projectId,modelHash:hash,label:'Nested scenario',experiment:{...experiment,baselineId:scenarioId}});assert.equal(r.status,409);
+r=await fetch(base+'/api/models?projectId='+projectId,{headers:owner});assert.equal(await r.text(),input);
+r=await fetch(base+'/api/runs?projectId='+projectId+'&options=1',{headers:owner});assert.equal((await r.json()).pipes.length,2);
+r=await fetch(base+'/api/runs?projectId='+projectId+'&options=1',{headers:other});assert.equal(r.status,404);
+const newForm=new FormData();newForm.append('projectId',projectId);newForm.append('file',new File([input+'\n; new model revision'],'revision.inp'));await fetch(base+'/api/models',{method:'POST',headers:owner,body:newForm});
+r=await call('/api/runs','POST',{id:crypto.randomUUID(),projectId,modelHash:hash,label:'Stale experiment',experiment});assert.equal(r.status,409);
+r=await fetch(base+'/api/runs?id='+scenarioId+'&input=1',{headers:owner});assert.equal(await r.text(),modified);
+console.log('PASS: server-generated changes, separate input hashes, access checks, actual SWMM comparison, downstream harm, invalid/nested/stale rejection, unchanged original, versioned downloads.');

@@ -24,7 +24,7 @@ export function parseReport(report:string):SolverResult{
  const depths=nodes.filter(n=>n.pondedDepth!==null).map(n=>n.pondedDepth!);
  return {engineVersion,flowUnits,depthUnit:us?'ft':'m',volumeUnit:us?'10^6 gal':'10^6 ltr',routing,continuityError,warnings,nodes,links,totalFloodVolume:nodes.reduce((sum,n)=>sum+n.floodVolume,0),peakPondedDepth:depths.length?Math.max(...depths):null,floodedNodes:nodes.filter(n=>n.floodHours>0).length,nonConvergingPercent};
 }
-export type RunRecord={id:string;projectId:string;modelHash:string;createdAt:string;status:'running'|'completed'|'failed'|'cancelled'|'interrupted';elapsedMs:number;result?:SolverResult;error?:string;reportHash?:string;source:'browser-swmm';label:string;enginePackage:'@fileops/swmm-wasm-web@0.0.4';verification:'client-executed; server-parsed report'};
+export type RunRecord={id:string;projectId:string;modelHash:string;createdAt:string;status:'running'|'completed'|'failed'|'cancelled'|'interrupted';elapsedMs:number;result?:SolverResult;error?:string;reportHash?:string;experiment?:import('./experiments').Experiment;comparison?:import('./experiments').Comparison;source:'browser-swmm';label:string;enginePackage:'@fileops/swmm-wasm-web@0.0.4';verification:'client-executed; server-parsed report'};
 export function validateRunnableModel(input:string){
  if(input.length>5*1024*1024)throw new Error('Model exceeds 5 MB.');
  const rows=input.split(/\r?\n/).map(l=>l.split(';')[0].trim()).filter(Boolean);

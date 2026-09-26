@@ -1,6 +1,6 @@
 # DrainageDoctor implementation
 
-This release supports real SWMM baseline execution in an isolated browser worker alongside an explicitly illustrative causal-diagnostic workspace. It does not satisfy the full production PRD.
+This release supports real SWMM baselines and controlled counterfactual experiments in an isolated browser worker, alongside a separate illustrative workspace. It does not satisfy the full production PRD.
 
 ## Implemented
 
@@ -15,6 +15,10 @@ This release supports real SWMM baseline execution in an isolated browser worker
 - Saved run history tied to model SHA-256; immutable terminal run records and content-addressed original RPT files.
 - Server-side report parsing, original-unit node flooding/depth/conduit tables, mass-balance and convergence warnings.
 - Current-model evidence filtering, real audit history, evidence JSON and raw solver report downloads.
+- Server-generated, bounded single-factor experiments: circular conduit diameter, Manning roughness, and existing FUNCTIONAL storage area.
+- Exact parameter diffs, separate immutable modified INP files, baseline links, and source/modified input hashes.
+- Server-computed before/after comparison, per-hotspot flood-volume benefit, network harm checks, numerical screening, and deterministic ranking of tested alternatives.
+- Downloadable modified INP, original RPT, and a combined baseline/experiment JSON evidence package.
 
 ## Execution and trust boundary
 
@@ -27,7 +31,7 @@ Self-contained files only: external rainfall, hotstart, and other file reference
 ## Production work still required
 
 - Independently verified server-side SWMM workers, durable job queue, retries, broader hydraulic benchmarks, and large-model execution.
-- Actual deterministic counterfactual generation, hydraulic result ingestion, intervention scoring, and multi-storm simulation.
+- Additional cause families (inlet, tailwater, terrain, runoff), automated search across parameter bounds, new storage construction, cost/robustness-weighted ranking, and multi-storm simulation.
 - Organization memberships and RBAC, secure sharing, approval signatures, SSO/MFA, quotas and billing.
 - GIS overlays, calibration workflows, durable rainfall libraries, optimization, AI grounded explanation, PDF reports.
 - Model version browsing, revision conflict handling for concurrent reviewers, backups, observability and operational acceptance.
@@ -40,7 +44,7 @@ Generate migrations with `npm run db:generate`, build, and apply the generated S
 
 ## Verification
 
-Run `node --test tests/intake.test.mjs tests/solver.test.mjs`, `npx tsc --noEmit`, and `npm run build`. `tests/api-smoke.mjs` and `tests/runs-api.mjs` run against a local built Worker on port 8787 and create local test records only.
+Run `node --test tests/intake.test.mjs tests/solver.test.mjs tests/experiments.test.mjs`, `npx tsc --noEmit`, and `npm run build`. `tests/api-smoke.mjs` and `tests/runs-api.mjs` run against a local built Worker on port 8787 and create local test records only.
 
 The actual browser solver was run twice on the synthetic inflow fixture with identical parsed numerical results. A native `swmm-toolkit==0.17.0` run (SWMM 5.2.4) is recorded in `tests/fixtures/native-swmm-5.2.4.rpt`: peak ponded depth differs by 0.001 m and total rounded flood volume matches. The regression tolerance is 0.002 m/0.002 million liters on this single fixture, not a claim of comprehensive engine equivalence. Native and browser versions differ and are disclosed.
 
@@ -49,3 +53,13 @@ Additional engine tests cover imperial units, no-flooding runs, kinematic routin
 ## Data limits
 
 INP uploads: 5 MB; browser solver: 500 nodes, 2,000 conduits, 7 simulation days, 12,000 reporting periods, report step at least 30 seconds, execution timeout 120 seconds. Network display: first 500 connected nodes; project list: latest 100; run history: latest 50; review notes: 100 notes, 2,000 characters each. Unsupported intake sections are preserved for the solver. Intake is not a replacement for SWMM input validation.
+
+## Controlled experiment semantics
+
+Each experiment is generated on the server from the immutable original source of a completed baseline for the current model. Experiments cannot chain from other experiments. The browser checks the generated input checksum before execution. All existing execution trust boundaries remain: solver reports are client-executed, not independently certified by the server.
+
+Diameter increases are limited to 5–100% for CIRCULAR conduits. Roughness decreases are limited to 5–30%. FUNCTIONAL storage area increases are limited to 5–100%; the area coefficient and constant are scaled together, preserving exponent, depth, losses, and connectivity. This changes existing storage, not a new facility. Only changed numeric tokens are replaced; comments, line endings, other sections, and untouched values are preserved.
+
+Eligibility is a review screen, not design acceptance: hotspot flood volume must improve by more than 0.002 million original-volume units; network volume may not worsen beyond that tolerance; other-node maximum depth, flood volume, and duration may not worsen beyond 0.002 m (0.006562 ft), 0.002 million volume units, or 0.02 hours. Both runs must have routing mass-balance error within ±1% and nonconverging steps at most 1%. All other nodes are checked, including upstream effects. Rankings put eligible results first, then hotspot flood-volume improvement, then lower percent change and stable ID. Different perturbation sizes and family choices limit causal interpretation. No confidence percentages, construction costs, regulatory approval, or multi-storm claims are invented.
+
+Five counterfactual tests cover exact token preservation, parameter bounds, unsupported geometry, functional storage execution, deterministic real SWMM benefit/transfer-of-flooding, units/network mismatch, zero denominators, and numerical rejection. API checks additionally cover generated input ownership, nested/stale baseline rejection, original input preservation, comparison persistence, and downloads after source revision.
