@@ -1,0 +1,12 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {parseInp,stressRows} from '../lib/drainage.ts';
+const valid=`[OPTIONS]\nFLOW_UNITS CMS\n[JUNCTIONS]\nJ1 10 2\nJ2 9 2\n[OUTFALLS]\nO1 8 FREE\n[CONDUITS]\nC1 J1 J2 50 .013\nC2 J2 O1 45 .013\n[COORDINATES]\nJ1 0 10\nJ2 10 5\nO1 20 0\n[CONTROLS]\nRULE Test\n`;
+test('Valid INP retains units, topology, and uninterpreted section warning',()=>{const m=parseInp(valid);assert.equal(m.nodes,3);assert.equal(m.conduits,2);assert.equal(m.units,'CMS');assert.equal(m.coordinates.length,3);assert.equal(m.links[1].to,'O1');assert.ok(m.warnings.some(w=>w.includes('CONTROLS')));});
+test('Rejects missing endpoint',()=>assert.throws(()=>parseInp(valid.replace('C2 J2 O1','C2 J2 MISSING')),/missing nodes/));
+test('Rejects duplicate node',()=>assert.throws(()=>parseInp(valid.replace('J2 9 2','J1 9 2')),/Duplicate/));
+test('Rejects invalid units',()=>assert.throws(()=>parseInp(valid.replace('CMS','UNKNOWN')),/FLOW_UNITS/));
+test('Rejects negative conduit length',()=>assert.throws(()=>parseInp(valid.replace('50 .013','-50 .013')),/positive/));
+test('Rejects malformed file',()=>assert.throws(()=>parseInp('not a model'),/requires/));
+test('Imperial flow units remain explicit and unchanged',()=>assert.equal(parseInp(valid.replace('CMS','CFS')).units,'CFS'));
+test('Storm fixture warns on 100-year exceedance',()=>{const rows=stressRows('INT-01');assert.equal(rows.length,4);assert.equal(rows[3][3],'Exceeds threshold');assert.equal(rows[1][2],.134)});

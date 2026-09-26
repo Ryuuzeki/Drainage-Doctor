@@ -1,0 +1,2 @@
+import {database,identity,jsonError} from '@/lib/storage';
+export async function GET(request:Request){try{const owner=await identity();if(!owner)return jsonError('Sign in to view activity.',401);const id=new URL(request.url).searchParams.get('projectId');const result=await database().prepare('SELECT event, created_at FROM audit_events WHERE owner = ? AND project_id = ? ORDER BY created_at DESC LIMIT 100').bind(owner,id).all();return Response.json({events:result.results});}catch{return jsonError('Activity unavailable.',503)}}
