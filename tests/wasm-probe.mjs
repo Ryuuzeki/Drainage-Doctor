@@ -1,0 +1,11 @@
+import fs from 'node:fs';
+import vm from 'node:vm';
+const scope={console,WebAssembly,Uint8Array,Uint16Array,Uint32Array,Int8Array,Int16Array,Int32Array,Float32Array,Float64Array,ArrayBuffer,TextDecoder,TextEncoder,atob,btoa,setTimeout,clearTimeout,performance,importScripts(){}};
+vm.createContext(scope);
+vm.runInContext(fs.readFileSync('public/vendor/swmmwasm-0.0.4.js','utf8'),scope);
+const module=await scope.createModule({print(){},printErr:console.error});
+module.FS.writeFile('/input.inp',fs.readFileSync('tests/fixtures/baseline.inp','utf8'));
+const code=module.ccall('swmm_run','number',['string','string','string'],['/input.inp','/report.rpt','/output.out']);
+const report=module.FS.readFile('/report.rpt',{encoding:'utf8'});
+fs.mkdirSync('.sites-runtime/benchmark',{recursive:true});fs.writeFileSync('.sites-runtime/benchmark/wasm.rpt',report);fs.writeFileSync('.sites-runtime/benchmark/wasm.out',module.FS.readFile('/output.out'));
+console.log('Exit:',code);console.log(report.slice(0,900));console.log(report.slice(report.indexOf('Node Depth Summary'),report.indexOf('Storage Volume Summary')));

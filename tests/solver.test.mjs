@@ -1,0 +1,18 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {runEngine} from './engine-helper.mjs';
+import {parseReport,validateRunnableModel} from '../lib/swmm-results.ts';
+const input=fs.readFileSync('tests/fixtures/baseline.inp','utf8');
+let baseline;
+test('Real SWMM run produces expected fixture metrics and balance',async()=>{baseline=await runEngine(input);assert.equal(baseline.code,0);const r=parseReport(baseline.report);assert.equal(r.engineVersion,'5.2.2');assert.equal(r.floodedNodes,2);assert.equal(r.nodes[0].maxDepth,9.16);assert.equal(r.peakPondedDepth,7.655);assert.equal(r.continuityError,-.182);assert.equal(r.volumeUnit,'10^6 ltr');assert.ok(r.warnings.some(w=>w.includes('did not converge')));});
+test('Same engine and input give identical numeric results',async()=>{const second=await runEngine(input);assert.deepEqual(parseReport(second.report),parseReport(baseline.report));});
+test('Imperial results retain original units',async()=>{const r=parseReport((await runEngine(input.replace('FLOW_UNITS CMS','FLOW_UNITS CFS'))).report);assert.equal(r.flowUnits,'CFS');assert.equal(r.depthUnit,'ft');assert.equal(r.volumeUnit,'10^6 gal');});
+test('Dry model reports zero flooding without fabricated ponded depth',async()=>{const r=parseReport((await runEngine(input.replace(/INFLOW FLOW 1.0 1.0 0/,'INFLOW FLOW 1.0 0.0 0'))).report);assert.equal(r.floodedNodes,0);assert.equal(r.peakPondedDepth,null);assert.equal(r.totalFloodVolume,0);});
+test('Kinematic routing does not interpret ponded volume as depth',async()=>{const r=parseReport((await runEngine(input.replace('DYNWAVE','KINWAVE'))).report);assert.equal(r.peakPondedDepth,null);assert.ok(r.nodes.every(n=>n.pondedDepth===null));});
+test('Solver errors are not accepted as completed results',async()=>{const r=await runEngine(input.replace('C1 CIRCULAR 0.30','C1 CIRCULAR -1'));assert.notEqual(r.code,0);assert.throws(()=>parseReport(r.report));});
+test('Missing flooding section is unavailable, not zero',()=>assert.throws(()=>parseReport(baseline.report.replace('Node Flooding Summary','Hidden Summary')),/missing/));
+test('Mass-balance warning is visible when threshold is exceeded',()=>assert.ok(parseReport(baseline.report.replace('Continuity Error (%) .....        -0.182','Continuity Error (%) .....         5.000')).warnings.some(w=>w.includes('exceeds the 1%'))));
+test('External file references are rejected before execution',()=>assert.throws(()=>validateRunnableModel(input+'\n[FILES]\nUSE HOTSTART some-file.hsf'),/self-contained/));
+test('Very long runs and excessive output are rejected',()=>{assert.throws(()=>validateRunnableModel(input.replace('END_DATE 01/01/2026','END_DATE 02/01/2026')),/7 days/);assert.throws(()=>validateRunnableModel(input.replace('REPORT_STEP 00:01:00','REPORT_STEP 00:00:01')),/30 seconds/)});
+test('Native 5.2.4 cross-check stays within report-precision tolerance on fixture',{skip:!fs.existsSync('tests/fixtures/native-swmm-5.2.4.rpt')},()=>{const a=parseReport(baseline.report),b=parseReport(fs.readFileSync('tests/fixtures/native-swmm-5.2.4.rpt','utf8'));assert.ok(Math.abs(a.peakPondedDepth-b.peakPondedDepth)<=.002);assert.ok(Math.abs(a.totalFloodVolume-b.totalFloodVolume)<=.002);for(const n of a.nodes)assert.ok(Math.abs(n.maxDepth-b.nodes.find(x=>x.id===n.id).maxDepth)<=.01)});
