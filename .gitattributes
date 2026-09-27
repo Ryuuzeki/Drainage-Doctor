@@ -1,0 +1,2 @@
+# The engine checksum must identify identical bytes on Windows and Linux.
+public/vendor/swmmwasm-0.0.4.js text eol=lf
