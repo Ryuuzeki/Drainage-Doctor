@@ -1,126 +1,155 @@
-# vinext-starter
+# DrainageDoctor
 
-A clean full-stack starter running on [vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and Drizzle support.
+Find why a site floods. Test the smallest fix. Prove it works **within the supplied model and tested scenarios**.
 
-## Prerequisites
+DrainageDoctor is an engineering decision-support application for EPA SWMM models. It runs controlled hydraulic experiments, ranks modeled sensitivities, searches a declared intervention grid, and checks the chosen alternative under multiple forcing scenarios. Professional engineering review remains required.
 
-- Node.js `>=22.13.0`
-- Portable: Windows, macOS, or Linux; no Bash required
-- Managed Linux: managed Linux runtime with Bash, `flock`, `curl`, `sha256sum`, and GNU `timeout`
-- Git is required only for publishing
+## What problem does it solve?
 
-## Sites Lifecycle
+A flooding map identifies symptoms. DrainageDoctor tests competing explanations and records what changed, how the hotspot responded, whether other nodes worsened, and which assumptions remain unverified.
 
-The Sites initializer copies the shared starter and selects managed-linux only when `SITES_MANAGED_LINUX_CONTAINER=1`; otherwise it selects portable. It saves the selection only in ignored `.sites-runtime/execution-profile.json`. Both profiles copy/configure first, then use the plugin's separate `install-dependencies.mjs` step to measure installation independently. Edit source under `app/` and follow the Sites skill for installation, preview, builds, and publishing.
+## How it works
 
-Run `node <plugin-root>/scripts/configure-execution-profile.mjs` only when the profile is unknown for the current checkout and environment. Profile changes do not alter tracked source or require reinstalling otherwise-valid dependencies; restart an existing preview to use the new selection. Do not commit or upload `.sites-runtime/`.
+1. Create a project and import a self-contained SWMM `.inp` file.
+2. Run a trusted baseline and inspect numerical quality and physical warnings.
+3. Select a hotspot and run **Hotspot Autopsy**.
+4. Review competing hypotheses, rejected experiments, and untested mechanisms.
+5. Inspect the smallest admissible magnitude found in the declared one-asset search.
+6. Compare actual baseline/intervention runs under three configurable forcing scenarios.
+7. Export evidence JSON, immutable INP files, SWMM reports, and binary outputs.
 
-This starter does not use `wrangler.jsonc`.
+## Implemented features
 
-`install:ci` runs `npm ci` once against the shared lockfile, disables parent-workspace discovery, and includes required dev/optional dependencies despite production/omit settings. Sharp defaults to prebuilt binaries unless explicitly configured otherwise. Do not overlap installers.
+- Real SWMM 5.2.2 execution in an isolated server child process.
+- Authenticated solver queue with cancellation, per-run and per-job timeouts, worker crash retry, immutable artifacts, and SHA-256 verification.
+- Automatic neighborhood hypothesis generation: up to two assets per family, twelve initial experiments.
+- Six experiment families: circular conduit diameter, Manning roughness, existing functional storage, supported inlet capture limits, fixed-stage tailwater, and imperviousness or external-inflow sensitivity.
+- Numerical screening, network-wide worsening checks, and a bounded ascending repair search.
+- Three real paired stress scenarios using embedded rainfall or direct FLOW input multipliers.
+- Hydrology integrity inspector and configurable engineering plausibility warnings.
+- Saved run history, model/engine provenance, evidence downloads, and project audit history.
 
-- **Portable:** Preserve host HOME, npm cache, registry, proxy, temporary paths, retry/concurrency settings, and lifecycle-script policy. Use `--prefer-offline --no-audit --no-fund`.
-- **Managed Linux:** Use the existing project-local HOME/cache/tmp setup and Linux install lock, tarball preflight, and timeout. Restore the image-seeded npm cache only when its lockfile hash matches; retain network fallback. Builds keep their existing timeout. These helpers are not invoked by the portable profile.
+## Architecture
 
-`scripts/sites-env.mjs` preserves the caller's HOME, npm cache, proxy, XDG, and temporary-directory configuration while defaulting Wrangler and Miniflare state to the checkout. If npm reports an unwritable cache, select a writable path with `npm_config_cache` for that install. The `dev` and `start` scripts also keep Wrangler logs inside the checkout. Generated `.sites-runtime/` and `.wrangler/` directories are disposable and ignored by Git.
-
-On portable, `npm run dev` uses `vinext dev` with HMR, starting at port 5173. Vinext records the running server in ignored `.vinext/` state, rejects an ordinary duplicate launch, and recovers stale state after a stopped process; exactly simultaneous starts can race. Pass `--port <port>` or `--hostname <host>` after `npm run dev --` when needed; keep portable previews on loopback.
-
-For browser QA on managed Linux, use `sites-preview start`. The project's dev script runs Vite and accepts the supervisor's `--host 0.0.0.0 --port 4173 --strictPort` arguments. The internal browser uses `http://terminal.local:4173/`; it is not a user-facing URL. The supervisor owns the preview lifecycle. The ignored local profile survives the supervisor's cleared process environment.
-
-The portable profile simulates ChatGPT sign-in only for loopback development requests. Visit `/signin-with-chatgpt?return_to=/` to sign in as `local_seedy` (`seedy@sites.test`, display name `Seedy`) and `/signout-with-chatgpt?return_to=/` to sign out. The development cookie preserves that identity across server restarts. Mock auth is disabled in the managed-linux profile and is not included in production builds; hosted authentication remains dispatch-owned.
-
-The Worker uses `vinext/server/fetch-handler`, including Vinext's config-aware image handling. After building, `npm start` runs that Worker locally through Wrangler on `127.0.0.1`, sharing `.wrangler/state` with dev preview and local D1 migrations; it does not deploy the site or simulate sign-in. Use the URL printed by the server. Pass `npm start -- --port <port>` to select a different built-preview port.
-
-Local previews use Miniflare's placeholder `Request.cf` metadata without a network lookup. Set `CLOUDFLARE_CF_FETCH_ENABLED=true` to opt into fetching preview metadata; this setting does not change hosted request metadata.
-
-Local tool usage metrics are disabled by default. Set `WRANGLER_SEND_METRICS=true` to opt in.
-
-## Included Shape
-
-- edit site code under `app/`
-- `app/chatgpt-auth.ts` provides optional dispatch-owned ChatGPT sign-in helpers
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/index.ts` reads the D1 binding from the Cloudflare Worker environment
-- `db/schema.ts` starts intentionally empty
-- `@cloudflare/workers-types` provides Worker types; `cloudflare-env.d.ts` declares optional `DB`/`BUCKET` bindings—update these declarations if binding names change
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
-
-## Workspace Auth Headers
-
-Signed-in visitors receive both `oai-authenticated-user-id` and `oai-authenticated-user-email`. Private Sites require every visitor to sign in; public Sites may also have anonymous visitors, for whom neither header is present.
-
-The user ID is stable for the same user on the same Site and different across Sites. Use it as the durable user key; use email and name for display or contact purposes.
-
-SIWC-authenticated workspace sites may also receive `oai-authenticated-user-full-name` when the user's SIWC profile has a non-empty `name` claim. The full-name value is percent-encoded UTF-8 and is accompanied by `oai-authenticated-user-full-name-encoding: percent-encoded-utf-8`.
-
-Treat the full name as optional and fall back to email when it is absent:
-
-```tsx
-import { headers } from "next/headers";
-
-export default async function Home() {
-  const requestHeaders = await headers();
-  const userId = requestHeaders.get("oai-authenticated-user-id");
-  const email = requestHeaders.get("oai-authenticated-user-email");
-  const encodedFullName = requestHeaders.get("oai-authenticated-user-full-name");
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get("oai-authenticated-user-full-name-encoding") ===
-      "percent-encoded-utf-8"
-      ? decodeURIComponent(encodedFullName)
-      : null;
-
-  const displayName = fullName ?? email;
-  // ...
-}
+```text
+Browser → authenticated web API → immutable INP → solver queue
+                                                   ↓
+                                            isolated SWMM worker
+                                                   ↓
+D1 job metadata ← server evidence parser ← RPT + OUT + content hashes
+R2 stores models, reports and completed analysis evidence
 ```
 
-## Optional Dispatch-Owned ChatGPT Sign-In
+The web application uses React, TypeScript, Vinext/Vite, Cloudflare Workers, D1 and R2. A separate Node.js service performs trusted SWMM execution. D1 and R2 run locally during development. Solver artifacts reside in a persistent service data directory.
 
-Import the ready-to-use helpers from `app/chatgpt-auth.ts` when the site needs optional or required ChatGPT sign-in:
+## SWMM execution and trust
 
-- Use `getChatGPTUser()` for optional signed-in UI.
-- Use the returned `userId` as the stable user key for user-owned records; do not use email as a durable identifier.
-- Use `requireChatGPTUser(returnTo)` for server-rendered pages that should send anonymous visitors through Sign in with ChatGPT.
-- In a Server Component, start sign-in with `<a href={chatGPTSignInPath(returnTo)} target="_top">`. The auth helper module is server-only; do not import it into a Client Component.
-- Do not use `fetch`, XHR, a client-side router, or a framework link that can prefetch the sign-in route. SIWC must start as a top-level navigation.
-- Never request the AuthAPI authorization endpoint directly. The dispatch-owned `/signin-with-chatgpt` route must start the SIWC flow.
-- Use `chatGPTSignOutPath(returnTo)` for browser sign-out links or actions.
-- Pass a same-origin relative `returnTo` path for the destination after sign-in or sign-out. The helper validates and safely encodes it.
-- Mark protected pages with `export const dynamic = "force-dynamic"` because they depend on per-request identity headers.
+The pinned engine is `@fileops/swmm-wasm-web@0.0.4`, reporting SWMM **5.2.2**. Its vendored JavaScript/WASM bundle is checked against `server/engine-manifest.json` before execution. The engine receives an in-memory filesystem without host filesystem or network APIs.
 
-Dispatch owns `/signin-with-chatgpt`, `/signout-with-chatgpt`, `/callback`, the OAuth cookies, and identity header injection. Do not implement app routes for those reserved paths. Routes that do not import and call the helper remain anonymous-compatible.
+`SERVER VERIFIED` means the configured server executed and parsed the model; it does not certify model accuracy or engineering suitability. Clients cannot submit report text to create completed results. Old browser-executed records retain their historical trust labels.
 
-SIWC establishes identity only; it does not prove workspace membership. Use the Sites hosting platform's access policy controls for workspace-wide restrictions, or enforce explicit server-side membership or allowlist checks.
+Limits: 500 nodes, 2,000 conduits, a seven-day event, at least a 30-second reporting interval, 120 seconds per simulation and 15 minutes per analysis job. Failed worker processes are retried once; hydraulic input errors are not retried. Jobs interrupted by a service restart become failed records and require explicit resubmission. Terminal results cannot be overwritten through the API.
 
-Use SIWC for account pages, user-specific dashboards, saved records, and write actions tied to the current ChatGPT user. Leave public content anonymous.
+The Docker Compose service adds a 512 MB container memory limit, one CPU, process limits, a read-only root filesystem and an unprivileged user. Running directly with Node provides a worker heap limit and wall-clock timeout, but not Docker's whole-process memory/CPU limits. Keep the solver token private and use a protected HTTPS connection when the service is remote. Back up the solver volume along with D1/R2.
 
-## Local D1 migrations
+## Counterfactual experiments
 
-For a D1-backed local preview, generate SQL with `npm run db:generate`. Build once through the Sites skill's build entrypoint (or `npm run build` for standalone use) to generate `dist/server/wrangler.json`, rebuilding if bindings change. From the project root, apply each pending migration in order:
+| Family | Tested change | Supported scope |
+| --- | --- | --- |
+| Conduit capacity | Increase diameter 5–100% | Existing CIRCULAR conduit |
+| Friction | Reduce Manning n 5–30% | Existing conduit |
+| Storage | Increase area coefficients 5–100% | Existing FUNCTIONAL storage; depth/exponent preserved |
+| Inlet capture | Increase Qmax 5–100% | Positive explicit Qmax on standard inlets or custom DIVERSION curves |
+| Downstream control | Lower fixed stage by 5–30% of water depth above invert | FIXED outfalls |
+| Runoff/inflow | Reduce impervious fraction or hydrograph multiplier 5–30% | Existing subcatchment or explicit FLOW inflow |
+
+SWMM ignores Qmax for custom RATING inlet curves; these are excluded. Tailwater and runoff experiments diagnose sensitivity but are not automatically recommended as physical repairs. No new storage facility or construction-ready inlet is designed.
+
+Each hypothesis starts from the original baseline. Ranking places admissibility before a disclosed score: hotspot volume reduction + 20 × fractional network volume reduction − 0.1 × intervention percentage. There is no invented cost or confidence estimate.
+
+Repair search examines one responsive physical asset on `[5, 10, 20, 30, 50, 75, 100]%`, clipped to the family bounds, and stops at its first admissible result. This is the smallest **tested** magnitude in that search, not a global optimum. Three paired scenarios then evaluate numerical quality, ponding and network harm. Robustness is reported as a count of tested scenarios passing screens.
+
+## Screenshots / demo
+
+The application includes an illustrative dashboard, labeled as such, plus a separate real-model workflow. The screenshot below shows the actual local application; hydraulic evidence must be obtained by running the model.
+
+![Automatic hotspot autopsy in the local application](docs/autopsy-desktop.png)
+
+![Real sensitivity ranking and declared search](docs/autopsy-results.png)
+
+## Testing
 
 ```sh
-node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0000_example.sql
+npm run typecheck
+npm test
+npm run build
 ```
 
-Replace the filename with the pending migration and `DB` with your D1 binding name if different. Use `.wrangler/state`, not `.wrangler/state/v3`; Wrangler adds the versioned directories. Do not replay migrations already applied locally. This updates only the preview database; publishing applies production migrations separately.
+With both local services running, `node --experimental-strip-types scripts/smoke-local.mjs` creates a labeled test project and verifies import → baseline → autopsy → evidence download, including rejection of forged client reports.
 
-## Diagnostic Commands
+GitHub Actions runs all three checks after `npm ci` on pushes and pull requests. Tests execute the real pinned SWMM engine and cover deterministic results, mass balance, unit retention, transferred flooding, Manning capacity, hydrograph integration, pipe/friction/storage/inlet/tailwater sensitivity, extreme and dry inputs, hydrology warnings, and the full autopsy/storm loop. HTTP service tests cover authentication, input immutability, artifact hashes, real worker execution and timeout behavior. A stored native SWMM 5.2.4 report provides an independent benchmark comparison at report precision.
 
-- `npm run install:ci`: perform the one locked dependency install
-- `npm run dev`: start the Vite/Vinext development server
-- `npm run build`: build the deployable Sites artifact
-- `npm run start`: preview the built Worker locally with D1/R2 support
-- `npm run db:generate`: generate Drizzle migrations after schema changes
+## Engineering limitations
 
-When using the Sites plugin, follow its skill instructions for installation, builds, and publishing. These npm commands remain available for standalone use.
+- Results depend on calibration, geometry, boundaries, rainfall and supplied hydrographs. Inspection does not validate their real-world provenance.
+- The autopsy identifies the dominant modeled sensitivity **among tested hypotheses**. It does not prove real-world causality.
+- Forcing multipliers are sensitivity cases, not verified design storms, return periods or exceedance probabilities. Separate uploaded storm-model comparison is not implemented.
+- Only embedded rainfall series and explicit FLOW multipliers are supported for scenario generation. Shared rainfall/boundary series are rejected.
+- Flooding volume is summed from the report; with ponding/re-entry, it is not necessarily net water lost from the network.
+- Results use report precision. Missing ponded depth remains unavailable; flooding duration and surcharge duration are different quantities.
+- Physical thresholds are configurable screening rules, not regulatory requirements. Numerical screening uses routing continuity ±1% and reported DYNWAVE non-convergence ≤1%.
+- The conservative other-node screen flags increases in depth, flooding duration or volume, including depth increases that need engineering interpretation.
+- Calibration, GIS/terrain, cost data, rainfall libraries, time-series tailwater perturbations, joint intervention optimization and construction design remain outside this release.
 
-The portable build runs Vinext directly without a host `timeout` command. The managed-linux build uses `scripts/build-verified.sh` and its existing `SITES_BUILD_TIMEOUT` setting.
+Methods: [EPA SWMM documentation](https://www.epa.gov/water-research/storm-water-management-model-swmm), [SWMM 5.2 manual](https://www.epa.gov/system/files/documents/2022-04/swmm-users-manual-version-5.2.pdf), and [EPA inlet solver implementation](https://github.com/USEPA/Stormwater-Management-Model/blob/develop/src/solver/inlet.c). Built-in thresholds are DrainageDoctor screening choices; user settings are recorded in the evidence.
 
-## Learn More
+## Local setup
 
-- [vinext Documentation](https://github.com/cloudflare/vinext)
-- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+Use Node.js 24.14 or a compatible recent Node release and npm.
+
+```sh
+npm ci
+npm run setup:local
+npm run db:migrate
+```
+
+The setup command creates ignored `.env.solver` and `.dev.vars` files with a shared random token. It preserves existing configuration. Start two terminals:
+
+```sh
+# Terminal 1
+npm run solver
+```
+
+```sh
+# Terminal 2
+npm run dev
+```
+
+Open `http://localhost:5173`. Portable development uses the bundled local mock authentication; it is a development environment. Configure real authentication, actual Cloudflare resources, `SOLVER_URL`, and `SOLVER_TOKEN` before a public deployment. The checked-in database UUID is only a local placeholder. Production hosting is a separate infrastructure task.
+
+Alternatively, run the solver with Docker after generating local configuration:
+
+```sh
+docker compose up --build solver
+```
+
+Keep `solver-data/`, `.env.solver`, `.dev.vars`, and local runtime state out of Git.
+
+## LovHack demo
+
+1. Start both services and create a real project.
+2. Import `public/autopsy-demo.inp` (also downloadable in the app).
+3. Run the baseline and inspect hotspot J1.
+4. Open Hotspot Autopsy, keep the disclosed default thresholds, and start analysis.
+5. Inspect ranked hypotheses and the bounded repair search.
+6. Open the three-scenario matrix and download the underlying INP/RPT evidence.
+
+This synthetic model uses **external inflows only**. The separate `benchmark-network.inp` intentionally produces extreme ponding for stress tests; it is not a calibrated site. Unsupported families remain listed as untested. No numerical results in the real workflow come from the illustrative dashboard.
+
+## Roadmap
+
+- Calibrated field-model validation and observed-event comparison.
+- User-supplied storm models and documented rainfall sources.
+- Broader inlet and time-series tailwater support.
+- Multi-asset, robustness-aware search with declared feasibility/cost inputs.
+- GIS context, calibration workflow and grounded evidence explanations.

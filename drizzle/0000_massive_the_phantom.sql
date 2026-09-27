@@ -1,4 +1,4 @@
-CREATE TABLE `audit_events` (
+CREATE TABLE IF NOT EXISTS `audit_events` (
 	`id` text PRIMARY KEY NOT NULL,
 	`owner` text NOT NULL,
 	`project_id` text NOT NULL,
@@ -6,8 +6,8 @@ CREATE TABLE `audit_events` (
 	`created_at` text NOT NULL
 );
 --> statement-breakpoint
-CREATE INDEX `audit_project_owner` ON `audit_events` (`project_id`,`owner`);--> statement-breakpoint
-CREATE TABLE `model_versions` (
+CREATE INDEX IF NOT EXISTS `audit_project_owner` ON `audit_events` (`project_id`,`owner`);--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS `model_versions` (
 	`id` text PRIMARY KEY NOT NULL,
 	`project_id` text NOT NULL,
 	`owner` text NOT NULL,
@@ -16,12 +16,12 @@ CREATE TABLE `model_versions` (
 	`created_at` text NOT NULL
 );
 --> statement-breakpoint
-CREATE INDEX `model_versions_project_owner` ON `model_versions` (`project_id`,`owner`);--> statement-breakpoint
-CREATE TABLE `projects` (
+CREATE INDEX IF NOT EXISTS `model_versions_project_owner` ON `model_versions` (`project_id`,`owner`);--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS `projects` (
 	`id` text PRIMARY KEY NOT NULL,
 	`owner` text NOT NULL,
 	`data` text NOT NULL,
 	`updated_at` text NOT NULL
 );
 --> statement-breakpoint
-CREATE INDEX `projects_owner_updated` ON `projects` (`owner`,`updated_at`);
+CREATE INDEX IF NOT EXISTS `projects_owner_updated` ON `projects` (`owner`,`updated_at`);

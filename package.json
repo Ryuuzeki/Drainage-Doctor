@@ -1,11 +1,16 @@
 {
-  "name": "site-creator-vinext-starter",
-  "version": "0.1.0",
+  "name": "drainage-doctor",
+  "version": "2.0.0",
   "private": true,
   "engines": {
     "node": ">=22.13.0"
   },
   "scripts": {
+    "test": "node --experimental-strip-types --test tests/*.test.mjs tests/domain/*.test.mjs",
+    "typecheck": "tsc --noEmit",
+    "setup:local": "node scripts/setup-local.mjs",
+    "solver": "node --env-file-if-exists=.env.solver --experimental-strip-types server/solver-service.mjs",
+    "db:migrate": "wrangler d1 migrations apply drainage-doctor --local --persist-to .wrangler/state --config wrangler.jsonc",
     "install:ci": "node scripts/install-ci.mjs",
     "dev": "node scripts/run-framework.mjs dev",
     "build": "node scripts/run-framework.mjs build",

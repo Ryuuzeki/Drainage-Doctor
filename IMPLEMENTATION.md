@@ -1,65 +1,21 @@
-# DrainageDoctor implementation
+# DrainageDoctor implementation status
 
-This release supports real SWMM baselines and controlled counterfactual experiments in an isolated browser worker, alongside a separate illustrative workspace. It does not satisfy the full production PRD.
+The v2 workflow executes trusted server-side SWMM baselines, controlled hypotheses, a bounded repair search and three paired forcing scenarios. See [README](README.md) for setup, supported experiment families, execution limits, architecture and engineering limitations.
 
-## Implemented
+## Evidence and interpretation
 
-- Responsive project workspace, network diagram, node selection and zoom.
-- Private account-owned projects in D1; request-side authorization for every data endpoint.
-- SWMM INP intake with explicit unit preservation, structural checks, SHA-256 provenance, and original bytes in R2.
-- Immutable model version records and server-side audit events.
-- Illustrative hotspot evidence, cause ranking, candidate comparison, and storm matrix.
-- Saved candidate selection, review notes, project editing, original model download, CSV hydrograph export, and Markdown evidence export.
-- Real imported models never inherit example hydraulic results.
-- Real EPA SWMM 5.2.2 baseline runs using the original uploaded INP bytes, with cancellation and a 120-second timeout.
-- Saved run history tied to model SHA-256; immutable terminal run records and content-addressed original RPT files.
-- Server-side report parsing, original-unit node flooding/depth/conduit tables, mass-balance and convergence warnings.
-- Current-model evidence filtering, real audit history, evidence JSON and raw solver report downloads.
-- Server-generated, bounded single-factor experiments: circular conduit diameter, Manning roughness, and existing FUNCTIONAL storage area.
-- Exact parameter diffs, separate immutable modified INP files, baseline links, and source/modified input hashes.
-- Server-computed before/after comparison, per-hotspot flood-volume benefit, network harm checks, numerical screening, and deterministic ranking of tested alternatives.
-- Downloadable modified INP, original RPT, and a combined baseline/experiment JSON evidence package.
+The automatic workflow uses the original model independently for each hypothesis. It records parameter changes, input/report/output/engine hashes, execution timestamps, original units, numerical quality, plausibility warnings and network effects. Failed experiments remain visible and cannot outrank valid experiments.
 
-## Execution and trust boundary
+A selected intervention is the first admissible magnitude tested on one selected physical asset. Other combinations are not searched. Tailwater and supplied-runoff sensitivity do not automatically become physical recommendations. Stress results are actual paired solver runs. Multipliers do not imply design return periods or probabilities.
 
-The pinned `@fileops/swmm-wasm-web@0.0.4` package contains EPA SWMM 5.2.2. Its unmodified bundle is served from this application. Bundle SHA-256: `ddad7d4c6b685973f3252b46f5a015499dbe88c3141b2fd5c89802c3817450ec`.
+## Current boundaries
 
-The browser computes results in a Web Worker; the server checks identity, model ownership/hash, units, node count, report completeness, and engine version before storing the parsed report. This is **client execution**, not independently verified or signed server execution. A malicious client can submit fabricated report contents; results are labeled accordingly and never treated as engineering approval.
+- Custom RATING inlet curves ignore Qmax in SWMM and are excluded from Qmax experiments.
+- Only fixed tailwater and existing functional storage are supported.
+- Numerical screening uses report values at report precision; surcharge duration is not yet parsed.
+- Other-node screening is conservative and includes maximum depth changes, even when flooding does not increase.
+- Uploaded storm-model sets, calibration, GIS, monetary cost, multi-asset optimization and real-world causality validation remain future work.
+- Legacy illustrative dashboards and browser-run history remain explicitly labeled. New completed results originate from the trusted solver service.
+- Production deployment must configure real authentication, Cloudflare bindings and a reachable authenticated solver service. Local configuration is not a production deployment.
 
-Self-contained files only: external rainfall, hotstart, and other file references require preprocessing. Inputs and dates are preserved. The app reads ponded depth only when SWMM reports a Depth column; kinematic-wave ponded volume is never reinterpreted as depth. Node flood volume is not equivalent to net system flood loss when ponding returns water to the network. All report precision and warnings are retained.
-
-## Production work still required
-
-- Independently verified server-side SWMM workers, durable job queue, retries, broader hydraulic benchmarks, and large-model execution.
-- Additional cause families (inlet, tailwater, terrain, runoff), automated search across parameter bounds, new storage construction, cost/robustness-weighted ranking, and multi-storm simulation.
-- Organization memberships and RBAC, secure sharing, approval signatures, SSO/MFA, quotas and billing.
-- GIS overlays, calibration workflows, durable rainfall libraries, optimization, AI grounded explanation, PDF reports.
-- Model version browsing, revision conflict handling for concurrent reviewers, backups, observability and operational acceptance.
-
-## Local development
-
-Install dependencies and run `npm run dev`. The portable server uses port 5173. Windows environments with a broken npm command shim can invoke their installed `npm-cli.js` directly with Node. The starter's local sign-in helper supplies a development identity; hosted private Sites supplies trusted authenticated-user headers.
-
-Generate migrations with `npm run db:generate`, build, and apply the generated SQL to the local DB using the README procedure. Hosted publishing applies migrations automatically. Never reuse local demo identity in production.
-
-## Verification
-
-Run `node --test tests/intake.test.mjs tests/solver.test.mjs tests/experiments.test.mjs`, `npx tsc --noEmit`, and `npm run build`. `tests/api-smoke.mjs` and `tests/runs-api.mjs` run against a local built Worker on port 8787 and create local test records only.
-
-The actual browser solver was run twice on the synthetic inflow fixture with identical parsed numerical results. A native `swmm-toolkit==0.17.0` run (SWMM 5.2.4) is recorded in `tests/fixtures/native-swmm-5.2.4.rpt`: peak ponded depth differs by 0.001 m and total rounded flood volume matches. The regression tolerance is 0.002 m/0.002 million liters on this single fixture, not a claim of comprehensive engine equivalence. Native and browser versions differ and are disclosed.
-
-Additional engine tests cover imperial units, no-flooding runs, kinematic routing's distinct ponded-volume semantics, solver rejection, missing summaries, mass-balance warnings, external files, and execution limits.
-
-## Data limits
-
-INP uploads: 5 MB; browser solver: 500 nodes, 2,000 conduits, 7 simulation days, 12,000 reporting periods, report step at least 30 seconds, execution timeout 120 seconds. Network display: first 500 connected nodes; project list: latest 100; run history: latest 50; review notes: 100 notes, 2,000 characters each. Unsupported intake sections are preserved for the solver. Intake is not a replacement for SWMM input validation.
-
-## Controlled experiment semantics
-
-Each experiment is generated on the server from the immutable original source of a completed baseline for the current model. Experiments cannot chain from other experiments. The browser checks the generated input checksum before execution. All existing execution trust boundaries remain: solver reports are client-executed, not independently certified by the server.
-
-Diameter increases are limited to 5–100% for CIRCULAR conduits. Roughness decreases are limited to 5–30%. FUNCTIONAL storage area increases are limited to 5–100%; the area coefficient and constant are scaled together, preserving exponent, depth, losses, and connectivity. This changes existing storage, not a new facility. Only changed numeric tokens are replaced; comments, line endings, other sections, and untouched values are preserved.
-
-Eligibility is a review screen, not design acceptance: hotspot flood volume must improve by more than 0.002 million original-volume units; network volume may not worsen beyond that tolerance; other-node maximum depth, flood volume, and duration may not worsen beyond 0.002 m (0.006562 ft), 0.002 million volume units, or 0.02 hours. Both runs must have routing mass-balance error within ±1% and nonconverging steps at most 1%. All other nodes are checked, including upstream effects. Rankings put eligible results first, then hotspot flood-volume improvement, then lower percent change and stable ID. Different perturbation sizes and family choices limit causal interpretation. No confidence percentages, construction costs, regulatory approval, or multi-storm claims are invented.
-
-Five counterfactual tests cover exact token preservation, parameter bounds, unsupported geometry, functional storage execution, deterministic real SWMM benefit/transfer-of-flooding, units/network mismatch, zero denominators, and numerical rejection. API checks additionally cover generated input ownership, nested/stale baseline rejection, original input preservation, comparison persistence, and downloads after source revision.
+The source tests exercise the real engine and trusted HTTP service. GitHub Actions checks TypeScript, tests and the portable production build on every push and pull request.

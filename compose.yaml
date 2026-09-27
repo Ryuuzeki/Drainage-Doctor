@@ -1,0 +1,17 @@
+services:
+  solver:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    env_file: .env.solver
+    ports: ["127.0.0.1:8788:8788"]
+    volumes: ["solver-data:/data"]
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 32
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    restart: unless-stopped
+volumes:
+  solver-data:

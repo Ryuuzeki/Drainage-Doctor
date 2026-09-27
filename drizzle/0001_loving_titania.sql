@@ -1,4 +1,4 @@
-CREATE TABLE `simulation_runs` (
+CREATE TABLE IF NOT EXISTS `simulation_runs` (
 	`id` text PRIMARY KEY NOT NULL,
 	`owner` text NOT NULL,
 	`project_id` text NOT NULL,
@@ -8,4 +8,4 @@ CREATE TABLE `simulation_runs` (
 	`created_at` text NOT NULL
 );
 --> statement-breakpoint
-CREATE INDEX `runs_owner_project_created` ON `simulation_runs` (`owner`,`project_id`,`created_at`);
+CREATE INDEX IF NOT EXISTS `runs_owner_project_created` ON `simulation_runs` (`owner`,`project_id`,`created_at`);
