@@ -8,7 +8,11 @@ export type SimulationEvidence={inputHash:string;reportHash:string;outputHash:st
 export type TestedHypothesis={spec:ExperimentSpec;changes:ParameterChange[];rationale:string;run?:SimulationEvidence;comparison?:Comparison;error?:string;score:number;status:'REJECTED'|'TESTED'|'ELIGIBLE FOR REVIEW'};
 export type AnalysisConfig={targetNode:string;minReduction:number;pondedDepthLimit:number;scenarios:StormScenario[];screening:ScreeningThresholds};
 export type StressEvidence={scenario:StormScenario;changes:ParameterChange[];baseline?:SimulationEvidence;intervention?:SimulationEvidence;comparison?:Comparison;status:'PASS'|'WARN'|'FAIL';error?:string};
-export type AnalysisEvidence={version:2;modelHash:string;networkHash:string;config:AnalysisConfig;createdAt:string;hydrology:ReturnType<typeof inspectHydrology>;baseline:SimulationEvidence;hypotheses:TestedHypothesis[];untested:{family:string;reason:string}[];dominant?:string;search:{description:string;grid:number[];attempts:TestedHypothesis[];selected?:TestedHypothesis};storms:StressEvidence[];limitations:string[]};
+export type SensitivityPoint={percent:number;asset:string;family:ExperimentSpec['kind'];status:TestedHypothesis['status'];volumeReduction:number|null;systemVolumeReduction:number|null;elasticity:number|null;comparison?:Comparison;error?:string};
+export type SensitivityCurve={family:ExperimentSpec['kind'];asset:string;points:SensitivityPoint[];monotonicity:'MONOTONIC'|'NON_MONOTONIC'|'INSUFFICIENT DATA';localElasticity:number|null;modeledSensitivity:'LOW'|'MEDIUM'|'HIGH'|'UNAVAILABLE'};
+export type NormalizedDiagnosis={family:ExperimentSpec['kind'];asset:string;modeledSensitivity:SensitivityCurve['modeledSensitivity'];localElasticity:number|null;benefit:number;monotonicity:SensitivityCurve['monotonicity'];admissible:boolean;rank:number};
+export type RepairCandidate={family:ExperimentSpec['kind'];asset:string;admissible:boolean;robustness:'PASS'|'WARN'|'FAIL'|'UNTESTED';magnitude:number|null;benefit:number|null;networkHarm:number|null;firstAdmissible?:TestedHypothesis;reason:string};
+export type AnalysisEvidence={version:2|3;modelHash:string;networkHash:string;config:AnalysisConfig;createdAt:string;hydrology:ReturnType<typeof inspectHydrology>;baseline:SimulationEvidence;hypotheses:TestedHypothesis[];untested:{family:string;reason:string}[];dominant?:string;search:{description:string;grid:number[];attempts:TestedHypothesis[];selected?:TestedHypothesis};storms:StressEvidence[];limitations:string[];autopsy?:{families:SensitivityCurve[];ranking:NormalizedDiagnosis[];dominant?:NormalizedDiagnosis;budget:{maxRuns:number;used:number;failed:number}};repairSearch?:{candidates:RepairCandidate[];selected?:RepairCandidate;scopeDescription:string};provenance?:{engineVersion:string;engineHash:string;createdAt:string};partial?:{succeeded:number;failed:number;failedReasons:string[]}};
 export type Solve=(input:string)=>Promise<SimulationEvidence>;
 export const defaultAnalysisConfig=(targetNode:string,imperial=false):AnalysisConfig=>({targetNode,minReduction:20,pondedDepthLimit:imperial?.492126:.15,scenarios:[.75,1,1.25].map((factor,i)=>({label:`Scenario ${String.fromCharCode(65+i)} · ${factor}× supplied inflow`,mode:'inflow',factor})),screening:{...defaultScreening}});
 export function validateAnalysisConfig(c:AnalysisConfig){
@@ -48,6 +52,24 @@ export function candidateScore(comparison:Comparison,percent:number,networkVolum
  // Declared screening objective; no monetary cost or invented robustness component.
  return (comparison.volumeReduction??0)+20*(networkVolume>0?comparison.systemVolumeReduction/networkVolume:0)-.1*percent;
 }
+export function monotonicity(points:SensitivityPoint[]):SensitivityCurve['monotonicity']{
+ const values=points.filter(p=>typeof p.volumeReduction==='number').sort((a,b)=>a.percent-b.percent).map(p=>p.volumeReduction!);
+ if(values.length<2)return 'INSUFFICIENT DATA';
+ return values.every((v,i)=>i===0||v>=values[i-1]-.001)?'MONOTONIC':'NON_MONOTONIC';
+}
+export function normalizedElasticity(baselineVolume:number,percent:number,volumeReduction:number|null){
+ if(!Number.isFinite(baselineVolume)||baselineVolume<=0||volumeReduction===null||!Number.isFinite(volumeReduction)||percent<=0)return null;
+ return (volumeReduction/100)/(percent/100);
+}
+export function buildNormalizedDiagnosis(tests:TestedHypothesis[],baselineVolume:number):{families:SensitivityCurve[];ranking:NormalizedDiagnosis[]}{
+ const grouped=new Map<string,SensitivityPoint[]>();
+ for(const t of tests){const key=`${t.spec.kind}:${t.spec.asset}`;const points=grouped.get(key)??[];points.push({percent:t.spec.percent,asset:t.spec.asset,family:t.spec.kind,status:t.status,volumeReduction:t.comparison?.volumeReduction??null,systemVolumeReduction:t.comparison?.systemVolumeReduction??null,elasticity:normalizedElasticity(baselineVolume,t.spec.percent,t.comparison?.volumeReduction??null),comparison:t.comparison,error:t.error});grouped.set(key,points)}
+ const families:SensitivityCurve[]=[];
+ for(const [key,points] of grouped){const [family,asset]=key.split(':') as [ExperimentSpec['kind'],string];const usable=points.filter(p=>p.volumeReduction!==null);const elasticity=usable.length?usable[usable.length-1].elasticity:null;const benefit=Math.max(0,...usable.map(p=>p.volumeReduction??0));const modeled=elasticity===null?'UNAVAILABLE':elasticity>=1.5?'HIGH':elasticity>=.5?'MEDIUM':'LOW';families.push({family,asset,points:points.sort((a,b)=>a.percent-b.percent),monotonicity:monotonicity(points),localElasticity:elasticity,modeledSensitivity:modeled})}
+ const ordered=families.map(f=>({family:f.family,asset:f.asset,modeledSensitivity:f.modeledSensitivity,localElasticity:f.localElasticity,benefit:Math.max(0,...f.points.map(p=>p.volumeReduction??0)),monotonicity:f.monotonicity,admissible:f.points.some(p=>p.status==='ELIGIBLE FOR REVIEW'),rank:0} satisfies NormalizedDiagnosis)).sort((a,b)=>(Number(b.admissible)-Number(a.admissible))||b.benefit-a.benefit||(b.localElasticity??-Infinity)-(a.localElasticity??-Infinity)||a.asset.localeCompare(b.asset));
+ ordered.forEach((d,i)=>{d.rank=i+1});
+ return {families,ranking:ordered};
+}
 export function stressStatus(base:SolverResult,next:SolverResult,target:string,limit:number){
  const c=compareResults(base,next,target),node=next.nodes.find(n=>sameId(n.id,target))!;
  if(!c.qualityPassed||c.worsenedNodes.length||c.systemVolumeReduction<-.002)return 'FAIL' as const;
@@ -73,7 +95,11 @@ export async function runAutopsy(input:string,config:AnalysisConfig,solve:Solve,
   }catch(e){return {spec,changes,rationale,error:(e as Error).message,score:-1e9,status:'REJECTED'}}
  };
  const tested:TestedHypothesis[]=[];
- for(const spec of specs){progress(`Testing ${familyNames[spec.kind]} · ${spec.asset}`);tested.push(await test(spec))}
+ // Normalize each family on three bounded perturbations from the original
+ // baseline. Keep one nearby representative per family for the quick budget.
+ const representative=[] as ExperimentSpec[];
+ for(const family of ['diameter','roughness','storage','inlet','tailwater','runoff'] as ExperimentSpec['kind'][]){const first=specs.find(s=>s.kind===family);if(first)representative.push(first)}
+ for(const spec of representative){for(const percent of [5,10,20]){if(tested.length>=24)break;progress(`Testing ${familyNames[spec.kind]} · ${spec.asset} · ${percent}%`);tested.push(await test({...spec,percent}))}}
  const hypotheses=rankHypotheses(tested);
  const dominant=hypotheses.find(h=>h.status!=='REJECTED'&&(h.comparison?.volumeReduction??0)>0);
  // Boundary and supplied-runoff sensitivities cannot automatically become physical repair recommendations.
@@ -103,7 +129,17 @@ export async function runAutopsy(input:string,config:AnalysisConfig,solve:Solve,
    storms.push(storm);
   }
  }
- return {version:2,modelHash,networkHash,config:structuredClone(config),createdAt:new Date().toISOString(),hydrology,baseline,hypotheses,untested,dominant:dominant?`${familyNames[dominant.spec.kind]} · ${dominant.spec.asset}`:undefined,search,storms,limitations:[
+ // Give the second physical asset its own bounded search as well. The quick
+ // budget leaves room for three checks after the first candidate's ascending
+ // search; every attempt still starts from the original baseline.
+ const physicalSpecs=specs.filter(s=>['diameter','roughness','storage','inlet'].includes(s.kind)).filter((s,i,a)=>a.findIndex(x=>x.kind===s.kind&&x.asset===s.asset)===i).slice(0,2);
+ const second=physicalSpecs.find(s=>`${s.kind}:${s.asset}`!==`${repair?.spec.kind}:${repair?.spec.asset}`);
+ const secondAttempts:TestedHypothesis[]=[];
+ if(second){for(const percent of [5,10,20]){if(tested.length>=24)break;const candidate=await test({...second,percent});tested.push(candidate);secondAttempts.push(candidate)}}
+ const normalized=buildNormalizedDiagnosis(tested,baseline.result.totalFloodVolume);
+ const physical=normalized.ranking.filter(r=>['diameter','roughness','storage','inlet'].includes(r.family));
+ const repairCandidates:RepairCandidate[]=physical.slice(0,2).map(r=>{const attempts=`${r.family}:${r.asset}`===`${repair?.spec.kind}:${repair?.spec.asset}`?search.attempts:secondAttempts;const selected=attempts.find(candidate=>candidate.status==='ELIGIBLE FOR REVIEW'&&(candidate.comparison?.volumeReduction??0)>=config.minReduction&&(()=>{const node=candidate.run?.result.nodes.find(n=>sameId(n.id,config.targetNode));return !!node&&(node.pondedDepth!==null?node.pondedDepth<=config.pondedDepthLimit:node.floodHours===0)})());return {family:r.family,asset:r.asset,admissible:!!selected,robustness:selected?'PASS':'UNTESTED',magnitude:selected?.spec.percent??null,benefit:selected?.comparison?.volumeReduction??null,networkHarm:selected?.comparison?.systemVolumeReduction??null,firstAdmissible:selected,reason:selected?'First admissible candidate in the bounded search.':'No admissible candidate within the declared budget.'}});
+ return {version:3,modelHash,networkHash,config:structuredClone(config),createdAt:new Date().toISOString(),hydrology,baseline,hypotheses,untested,dominant:dominant?`${familyNames[dominant.spec.kind]} · ${dominant.spec.asset}`:undefined,search,storms,autopsy:{families:normalized.families,ranking:normalized.ranking,dominant:normalized.ranking[0],budget:{maxRuns:24,used:tested.length+search.attempts.length+storms.length*2,failed:tested.filter(t=>t.status==='REJECTED').length}},repairSearch:{candidates:repairCandidates,selected:repairCandidates.find(c=>c.firstAdmissible),scopeDescription:'Cross-asset screening covers conduit capacity, friction, storage and nearby inlet. Boundary and supplied-runoff sensitivities remain diagnostic only.'},provenance:{engineVersion:baseline.result.engineVersion,engineHash:baseline.engineHash,createdAt:new Date().toISOString()},partial:{succeeded:tested.filter(t=>t.status!=='REJECTED').length,failed:tested.filter(t=>t.status==='REJECTED').length,failedReasons:tested.filter(t=>t.status==='REJECTED'&&t.error).map(t=>t.error!)},limitations:[
   'Dominant modeled sensitivity among tested hypotheses; neither proof of real-world root cause nor engineering approval.',
   'Each experiment starts from the original input. Unequal physical perturbations across families are not normalized causal attribution.',
   'Rank: admissibility first, then hotspot volume reduction + 20 × network fractional reduction − 0.1 × percent change. No monetary cost or untested robustness is scored.',

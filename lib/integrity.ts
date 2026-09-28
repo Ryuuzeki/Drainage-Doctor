@@ -26,7 +26,9 @@ export function inspectHydrology(input:string){
   if(!infiltration.some(i=>sameId(i.tokens[0],t[0])))warn('infiltration-missing','No explicit infiltration parameters; inspect solver defaults.',t[0]);
  }
  for(const r of infiltration){
-  const p=r.tokens.slice(1).filter(t=>!/[A-Za-z_]/.test(t)).map(Number);
+  // Scientific notation (for example 1e-5) is numeric even though it
+  // contains a letter. Keep only tokens that Number() can parse completely.
+  const p=r.tokens.slice(1).filter(t=>t.trim()!==''&&Number.isFinite(Number(t))).map(Number);
   if(p.some(n=>!Number.isFinite(n)||n<0)||p.length<3)warn('infiltration','Invalid or incomplete infiltration parameters.',r.tokens[0],'error');
   if(method.includes('HORTON')&&p[0]<p[1])warn('horton','Horton maximum rate is below minimum rate.',r.tokens[0],'error');
   if(method.includes('GREEN_AMPT')&&(p[1]<=0||p[2]>1))warn('green-ampt','Review conductivity and initial moisture deficit (0–1).',r.tokens[0],'error');
@@ -46,7 +48,8 @@ export function inspectHydrology(input:string){
  const assumptions=['Calibration status unknown.','Rainfall return period and IDF provenance are not verified.','Terrain, surface connectivity and boundary representativeness require engineering review.'];
  if(!active)assumptions.push('Rainfall-runoff is not active. Supplied hydrographs are engineering inputs whose derivation has not been verified.');
  if(active&&external.length)assumptions.push('Rainfall-runoff and external inflows coexist; review potential double counting.');
- return {status:active?'HYDROLOGY MODEL PRESENT':external.length?'EXTERNAL INFLOW ONLY':'NO ACTIVE HYDROLOGIC INPUT',rainfallRunoff:active,subcatchments:sub.length,rainGages:gages.length,timeSeries:series.size,infiltrationMethod:method,externalInflows:external.length,units:optionValue(rows,'FLOW_UNITS')??'Unknown',routing:optionValue(rows,'FLOW_ROUTING')??'Unknown',period:{start:`${optionValue(rows,'START_DATE')??'unspecified'} ${optionValue(rows,'START_TIME')??'00:00:00'}`,end:`${optionValue(rows,'END_DATE')??'unspecified'} ${optionValue(rows,'END_TIME')??'00:00:00'}`},routingStep:optionValue(rows,'ROUTING_STEP')??'solver default',wetStep:optionValue(rows,'WET_STEP')??'solver default',reportStep:optionValue(rows,'REPORT_STEP')??'solver default',antecedentDryDays:optionValue(rows,'DRY_DAYS')??'0 (solver default)',warnings,assumptions};
+ const status=active&&external.length?'MIXED HYDROLOGY':active?'HYDROLOGY MODEL PRESENT':external.length?'EXTERNAL INFLOW ONLY':'NO ACTIVE HYDROLOGY';
+ return {status,rainfallRunoff:active,subcatchments:sub.length,rainGages:gages.length,timeSeries:series.size,infiltrationMethod:method,externalInflows:external.length,units:optionValue(rows,'FLOW_UNITS')??'Unknown',routing:optionValue(rows,'FLOW_ROUTING')??'Unknown',period:{start:`${optionValue(rows,'START_DATE')??'unspecified'} ${optionValue(rows,'START_TIME')??'00:00:00'}`,end:`${optionValue(rows,'END_DATE')??'unspecified'} ${optionValue(rows,'END_TIME')??'00:00:00'}`},routingStep:optionValue(rows,'ROUTING_STEP')??'solver default',wetStep:optionValue(rows,'WET_STEP')??'solver default',reportStep:optionValue(rows,'REPORT_STEP')??'solver default',antecedentDryDays:optionValue(rows,'DRY_DAYS')??'0 (solver default)',warnings,assumptions};
 }
 export function plausibility(input:string,result?:SolverResult,thresholds:ScreeningThresholds=defaultScreening):ReviewWarning[]{
  if(Object.values(thresholds).some(n=>!Number.isFinite(n)||n<=0))throw new Error('Screening thresholds must be finite and positive.');

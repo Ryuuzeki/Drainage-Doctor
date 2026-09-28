@@ -1,12 +1,14 @@
 # DrainageDoctor implementation status
 
-The v2 workflow executes trusted server-side SWMM baselines, controlled hypotheses, a bounded repair search and three paired forcing scenarios. See [README](README.md) for setup, supported experiment families, execution limits, architecture and engineering limitations.
+The v3 workflow executes trusted server-side SWMM baselines, normalized multi-magnitude hypotheses, a cross-asset bounded repair search and three paired forcing scenarios. See [README](README.md) for setup, supported experiment families, execution limits, architecture and engineering limitations.
 
 ## Evidence and interpretation
 
 The automatic workflow uses the original model independently for each hypothesis. It records parameter changes, input/report/output/engine hashes, execution timestamps, original units, numerical quality, plausibility warnings and network effects. Failed experiments remain visible and cannot outrank valid experiments.
 
 A selected intervention is the first admissible magnitude tested on one selected physical asset. Other combinations are not searched. Tailwater and supplied-runoff sensitivity do not automatically become physical recommendations. Stress results are actual paired solver runs. Multipliers do not imply design return periods or probabilities.
+
+V3 stores `evidence.version = 3` with per-family response curves at 5%, 10% and 20%, local elasticity, monotonicity, normalized ranking, partial-failure counts, cross-asset repair candidates, scenario provenance and solver hashes. V2 evidence remains readable because the legacy hypothesis, search and storm fields are retained. The engineering report endpoint renders the immutable evidence into a downloadable PDF; source JSON, INP, RPT and OUT artifacts remain available.
 
 ## Current boundaries
 

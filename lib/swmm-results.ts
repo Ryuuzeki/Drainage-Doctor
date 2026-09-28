@@ -28,7 +28,15 @@ export type RunRecord={id:string;projectId:string;modelHash:string;createdAt:str
 export function validateRunnableModel(input:string){
  if(input.length>5*1024*1024)throw new Error('Model exceeds 5 MB.');
  const rows=input.split(/\r?\n/).map(l=>l.split(';')[0].trim()).filter(Boolean);
- if(rows.some(l=>/\bFILE\b/i.test(l))||rows.includes('[FILES]'))throw new Error('This browser runner supports self-contained INP files only. Embed external rainfall/time-series data first.');
+ // FILE is a valid word in titles, labels and comments. Reject only the
+ // actual SWMM external-file declarations that this runner cannot sandbox.
+ let section='';
+ const external=rows.some(line=>{
+  if(/^\[[^\]]+\]$/.test(line)){section=line.toUpperCase();return section==='[FILES]'}
+  if(section==='[FILES]')return true;
+  return section==='[RAINGAGES]'&&/\bFILE\b/i.test(line);
+ });
+ if(external)throw new Error('This browser runner supports self-contained INP files only. Embed external rainfall/time-series data first.');
  const option=(key:string)=>rows.find(l=>new RegExp('^'+key+'\\s','i').test(l))?.split(/\s+/)[1];
  const startDate=option('START_DATE'),endDate=option('END_DATE');if(!startDate||!endDate)throw new Error('Explicit START_DATE and END_DATE are required for browser execution.');
  const date=(d:string,t:string)=>{const m=d.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);const h=t.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);if(!m||!h)throw new Error('Use MM/DD/YYYY dates and HH:MM:SS times.');return Date.UTC(+m[3],+m[1]-1,+m[2],+h[1],+h[2],+(h[3]??0))};

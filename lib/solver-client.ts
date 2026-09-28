@@ -1,6 +1,6 @@
 import {env} from 'cloudflare:workers';
 import {sha256} from './inp';
-export type SolverJob={id:string;kind:'single'|'autopsy';inputHash:string;status:'queued'|'running'|'completed'|'failed'|'cancelled';progress?:string;error?:string;resultHash?:string;createdAt:string;finishedAt?:string};
+export type SolverJob={id:string;kind:'single'|'autopsy';inputHash:string;status:'queued'|'running'|'completed'|'failed'|'cancelled';progress?:string;error?:string;errorCode?:string;resultHash?:string;createdAt:string;finishedAt?:string};
 export async function solverRequest(path:string,init:RequestInit={}){
  const url=env.SOLVER_URL,token=env.SOLVER_TOKEN;
  if(!url||!token)throw new Error('Trusted solver is not configured. Set SOLVER_URL and SOLVER_TOKEN on the server.');

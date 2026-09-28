@@ -12,7 +12,7 @@ async function sync(record:AnalysisRecord,owner:string){
  if(!['queued','running'].includes(record.status))return record;
  const job=await (await solverRequest(`/jobs/${record.id}`)).json() as SolverJob;
  if(job.inputHash!==record.modelHash)throw new Error('Autopsy input checksum mismatch.');
- const updated:AnalysisRecord={...record,status:job.status,progress:job.progress,error:job.error,resultHash:job.resultHash};
+ const updated:AnalysisRecord={...record,status:job.status,progress:job.progress,error:job.error,errorCode:job.errorCode,resultHash:job.resultHash};
  if(['queued','running'].includes(job.status))return updated;
  if(job.status==='completed'){
   const evidence=await solverResult<AnalysisEvidence>(record.id,job.resultHash!);

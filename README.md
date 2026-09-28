@@ -22,12 +22,13 @@ A flooding map identifies symptoms. DrainageDoctor tests competing explanations 
 
 - Real SWMM 5.2.2 execution in an isolated server child process.
 - Authenticated solver queue with cancellation, per-run and per-job timeouts, worker crash retry, immutable artifacts, and SHA-256 verification.
-- Automatic neighborhood hypothesis generation: up to two assets per family, twelve initial experiments.
+- Automatic neighborhood hypothesis generation: up to two assets per family, with normalized 5%, 10% and 20% response tests for each representative family.
 - Six experiment families: circular conduit diameter, Manning roughness, existing functional storage, supported inlet capture limits, fixed-stage tailwater, and imperviousness or external-inflow sensitivity.
 - Numerical screening, network-wide worsening checks, and a bounded ascending repair search.
 - Three real paired stress scenarios using embedded rainfall or direct FLOW input multipliers.
 - Hydrology integrity inspector and configurable engineering plausibility warnings.
 - Saved run history, model/engine provenance, evidence downloads, and project audit history.
+- V3 normalized sensitivity curves, monotonicity checks, cross-asset repair candidates, hydrology provenance, explicit error taxonomy, and immutable engineering-report PDF export.
 
 ## Architecture
 
@@ -67,7 +68,7 @@ SWMM ignores Qmax for custom RATING inlet curves; these are excluded. Tailwater 
 
 Each hypothesis starts from the original baseline. Ranking places admissibility before a disclosed score: hotspot volume reduction + 20 × fractional network volume reduction − 0.1 × intervention percentage. There is no invented cost or confidence estimate.
 
-Repair search examines one responsive physical asset on `[5, 10, 20, 30, 50, 75, 100]%`, clipped to the family bounds, and stops at its first admissible result. This is the smallest **tested** magnitude in that search, not a global optimum. Three paired scenarios then evaluate numerical quality, ponding and network harm. Robustness is reported as a count of tested scenarios passing screens.
+V3 normalizes representative family response curves at `[5, 10, 20]%` using `E = (ΔY/Y0) / (ΔX/X0)`, retains failed and untested families, and labels the ranking as modeled sensitivity. Repair candidates cover the top physical assets across conduit capacity, friction, storage and nearby inlet; each candidate is searched on `[5, 10, 20, 30, 50, 75, 100]%` within the run budget and stops at its first admissible result. This is the smallest **tested** magnitude in that search, not a global optimum. Three paired scenarios then evaluate numerical quality, ponding and network harm. Robustness is reported as a count of tested scenarios passing screens.
 
 ## Screenshots / demo
 

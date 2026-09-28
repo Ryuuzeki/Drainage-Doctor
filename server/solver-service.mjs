@@ -8,6 +8,7 @@ import {parseReport,validateRunnableModel} from '../lib/swmm-results.ts';
 import {parseInp} from '../lib/drainage.ts';
 import {plausibility} from '../lib/integrity.ts';
 import {runAutopsy,validateAnalysisConfig} from '../lib/diagnostics.ts';
+import {classifyError} from '../lib/errors.ts';
 const manifest=JSON.parse(await readFile(new URL('./engine-manifest.json',import.meta.url),'utf8'));
 const digest=value=>createHash('sha256').update(value).digest('hex');
 const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
@@ -67,7 +68,7 @@ export async function createSolverService({token,dataDir,timeoutMs=120000,jobTim
    if(abort.signal.aborted)throw new Error('Job cancelled or exceeded its time limit.');
    const data=JSON.stringify(evidence),resultHash=digest(data);await immutableArtifact(job.id,`${resultHash}.json`,data);
    job.resultHash=resultHash;job.status='completed';job.progress='Completed';
-  }catch(e){job.status=abort.signal.aborted?'cancelled':'failed';job.error=e.message}
+  }catch(e){job.status=abort.signal.aborted?'cancelled':'failed';job.error=e.message;job.errorCode=abort.signal.aborted?'TIMEOUT':classifyError(e)}
   finally{clearTimeout(totalTimer);delete job.abort;job.finishedAt=new Date().toISOString();await record(job)}
  }
  async function drain(){
