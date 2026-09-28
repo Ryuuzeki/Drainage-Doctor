@@ -29,8 +29,8 @@ export async function createSolverService({token,dataDir,timeoutMs=120000,jobTim
  async function immutableArtifact(id,name,value){
   try{await writeFile(path.join(jobPath(id),name),value,{flag:'wx'})}catch(e){if(e.code!=='EEXIST')throw e;const existing=await readFile(path.join(jobPath(id),name));if(digest(existing)!==digest(value))throw new Error('Immutable artifact collision.')}
  }
- async function isolated(input,signal){
-  for(let attempt=0;attempt<2;attempt++){
+ async function isolated(input,signal,maxAttempts=2){
+  for(let attempt=0;attempt<maxAttempts;attempt++){
    if(signal.aborted)throw new Error('Job cancelled or exceeded its total time limit.');
    try{return await new Promise((resolve,reject)=>{
     const child=fork(childFile,[],{execArgv:['--max-old-space-size=192'],stdio:['ignore','ignore','ignore','ipc'],env:{}});children.add(child);
@@ -41,7 +41,7 @@ export async function createSolverService({token,dataDir,timeoutMs=120000,jobTim
     signal.addEventListener('abort',abort,{once:true});
     child.once('message',m=>finish(null,m));child.once('error',e=>finish(Object.assign(e,{retryable:true})));child.once('exit',code=>finish(Object.assign(new Error(`Isolated worker exited (${code}).`),{retryable:true})));
     child.send({input});
-   })}catch(e){if(!e.retryable||attempt===1)throw e}
+   })}catch(e){if(!e.retryable||attempt===maxAttempts-1)throw e}
   }
  }
  async function execute(job,payload){
@@ -52,7 +52,8 @@ export async function createSolverService({token,dataDir,timeoutMs=120000,jobTim
    if(model.nodes>500||model.conduits>2000)throw new Error('Model exceeds 500 nodes or 2,000 conduits.');
    const problems=plausibility(input);if(problems.some(w=>w.severity==='error'))throw new Error(problems.filter(w=>w.severity==='error').map(w=>w.message).join(' '));
    const inputHash=digest(input);await immutableArtifact(job.id,`${inputHash}.inp`,input);
-   const executedAt=new Date().toISOString(),output=await isolated(input,abort.signal);
+   // Autopsy's budget counts every worker attempt; no hidden retry may exceed it.
+   const executedAt=new Date().toISOString(),output=await isolated(input,abort.signal,payload.kind==='autopsy'?1:2);
    if(output.error)throw new Error(output.error);
    const reportHash=digest(output.report);await immutableArtifact(job.id,`${reportHash}.rpt`,output.report);
    if(output.code!==0)throw new Error(output.report.match(/.*ERROR\s+\d+[^\n]*/)?.[0]?.trim()??`SWMM error ${output.code}`);
@@ -64,10 +65,10 @@ export async function createSolverService({token,dataDir,timeoutMs=120000,jobTim
   };
   try{
    job.status='running';job.startedAt=new Date().toISOString();await record({...job,abort:undefined});
-   const evidence=payload.kind==='autopsy'?await runAutopsy(payload.input,payload.config,solve,message=>{job.progress=message}):await solve(payload.input);
-   if(abort.signal.aborted)throw new Error('Job cancelled or exceeded its time limit.');
+   const evidence=payload.kind==='autopsy'?await runAutopsy(payload.input,payload.config,solve,message=>{job.progress=message},{signal:abort.signal}):await solve(payload.input);
+   if(abort.signal.aborted&&payload.kind!=='autopsy')throw new Error('Job cancelled or exceeded its time limit.');
    const data=JSON.stringify(evidence),resultHash=digest(data);await immutableArtifact(job.id,`${resultHash}.json`,data);
-   job.resultHash=resultHash;job.status='completed';job.progress='Completed';
+   job.resultHash=resultHash;job.status='completed';job.progress=evidence.executionStatus==='INCOMPLETE'?'Incomplete analysis; completed evidence retained':'Completed';
   }catch(e){job.status=abort.signal.aborted?'cancelled':'failed';job.error=e.message;job.errorCode=abort.signal.aborted?'TIMEOUT':classifyError(e)}
   finally{clearTimeout(totalTimer);delete job.abort;job.finishedAt=new Date().toISOString();await record(job)}
  }

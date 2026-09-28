@@ -53,12 +53,29 @@ test('Trusted autopsy service returns real paired storm evidence',async t=>{
  await request('/jobs',{method:'POST',body:JSON.stringify({id,kind:'autopsy',input,inputHash:hash(input),config:defaultAnalysisConfig('J1')})});
  const job=await terminal(id);assert.equal(job.status,'completed',job.error);
  const result=await (await request(`/jobs/${id}/result`)).json();
- assert.ok(result.search.selected);assert.equal(result.storms.length,3);
- assert.ok(result.storms.every(s=>s.baseline?.verification==='SERVER VERIFIED'&&s.intervention?.verification==='SERVER VERIFIED'));
+ assert.ok(result.repairSearch.selected);assert.equal(result.robustness.scenarios.length,3);
+ assert.ok(result.robustness.scenarios.every(s=>s.baseline?.verification==='SERVER VERIFIED'&&s.intervention?.verification==='SERVER VERIFIED'));
 });
 test('Worker timeout creates a failed job with no completed result',async t=>{
  const {request,terminal}=await fixture(t,{timeoutMs:1}),id=randomUUID();
  await request('/jobs',{method:'POST',body:JSON.stringify({id,kind:'single',input,inputHash:hash(input)})});
  const job=await terminal(id);assert.equal(job.status,'failed');assert.match(job.error,/execution limit/);
  assert.equal((await request(`/jobs/${id}/result`)).status,409);
+});
+test('Cancelling a live autopsy retains partial immutable evidence without robustness PASS',async t=>{
+ const {request,terminal}=await fixture(t),id=randomUUID();
+ await request('/jobs',{method:'POST',body:JSON.stringify({id,kind:'autopsy',input,inputHash:hash(input),config:defaultAnalysisConfig('J1')})});
+ let started=false;
+ for(let i=0;i<300;i++){
+  const job=await (await request(`/jobs/${id}`)).json();
+  if(job.progress?.startsWith('Normalized autopsy')){started=true;break}
+  await delay(10);
+ }
+ assert.equal(started,true,'Cancel after the trusted baseline, while a hypothesis is running');
+ await request(`/jobs/${id}`,{method:'DELETE'});
+ const job=await terminal(id);assert.equal(job.status,'completed',job.error);
+ const text=await (await request(`/jobs/${id}/result`)).text(),e=JSON.parse(text);
+ assert.equal(hash(text),job.resultHash);assert.equal(e.version,4);assert.equal(e.executionStatus,'INCOMPLETE');
+ assert.equal(e.baseline.verification,'SERVER VERIFIED');assert.notEqual(e.robustness.status,'PASS');
+ assert.ok(e.budget.usedRuns<=e.budget.maxRuns);
 });

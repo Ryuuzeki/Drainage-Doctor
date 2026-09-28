@@ -1,23 +1,21 @@
 # DrainageDoctor implementation status
 
-The v3 workflow executes trusted server-side SWMM baselines, normalized multi-magnitude hypotheses, a cross-asset bounded repair search and three paired forcing scenarios. See [README](README.md) for setup, supported experiment families, execution limits, architecture and engineering limitations.
+V4 binds engineering conclusions to the solver evidence that supports them. The canonical object has one diagnosis, an equivalent cross-asset repair search, selected-candidate forcing evidence and an enforced global run budget.
 
-## Evidence and interpretation
+## Integrity rules
 
-The automatic workflow uses the original model independently for each hypothesis. It records parameter changes, input/report/output/engine hashes, execution timestamps, original units, numerical quality, plausibility warnings and network effects. Failed experiments remain visible and cannot outrank valid experiments.
+- Every solve passes the central budget and input/engine checks; failed calls count too.
+- Autopsy uses 5/10/20% changes from the original baseline; elasticity uses hotspot flood volume and a median across valid points.
+- A non-monotonic response is retained and penalized, never silently presented as a strong dominant diagnosis.
+- Candidates receive the same ascending grid, clipped only by declared family limits; cached identical autopsy attempts are reused.
+- Repair selection completes before stress testing. Each stress pair includes the selected spec and expected input hashes.
+- PASS is derived from complete valid pairs. Other candidates are UNTESTED. Interrupted analyses retain evidence with INCOMPLETE execution status.
+- UI and paginated PDF consume the same read-only adapter; historical V2/V3 numbers are retained without recomputation.
 
-A selected intervention is the first admissible magnitude tested on one selected physical asset. Other combinations are not searched. Tailwater and supplied-runoff sensitivity do not automatically become physical recommendations. Stress results are actual paired solver runs. Multipliers do not imply design return periods or probabilities.
+## Validation and boundaries
 
-V3 stores `evidence.version = 3` with per-family response curves at 5%, 10% and 20%, local elasticity, monotonicity, normalized ranking, partial-failure counts, cross-asset repair candidates, scenario provenance and solver hashes. V2 evidence remains readable because the legacy hypothesis, search and storm fields are retained. The engineering report endpoint renders the immutable evidence into a downloadable PDF; source JSON, INP, RPT and OUT artifacts remain available.
+See [V4 audit](docs/v4-audit.md) for coverage, real-solver integration, browser/PDF checks and known limitations. No production deployment has been performed.
 
-## Current boundaries
+Calibration, rainfall provenance, construction feasibility, costs, terrain/GIS, multi-asset optimization and real-world causal proof remain outside this release. Fixed tailwater, explicit supported inlet Qmax and existing functional storage are the supported perturbations; custom RATING inlet curves do not respond to Qmax in SWMM. Flooding duration is distinct from surcharge duration.
 
-- Custom RATING inlet curves ignore Qmax in SWMM and are excluded from Qmax experiments.
-- Only fixed tailwater and existing functional storage are supported.
-- Numerical screening uses report values at report precision; surcharge duration is not yet parsed.
-- Other-node screening is conservative and includes maximum depth changes, even when flooding does not increase.
-- Uploaded storm-model sets, calibration, GIS, monetary cost, multi-asset optimization and real-world causality validation remain future work.
-- Legacy illustrative dashboards and browser-run history remain explicitly labeled. New completed results originate from the trusted solver service.
-- Production deployment must configure real authentication, Cloudflare bindings and a reachable authenticated solver service. Local configuration is not a production deployment.
-
-The source tests exercise the real engine and trusted HTTP service. GitHub Actions checks TypeScript, tests and the portable production build on every push and pull request.
+Service restarts cannot recover an in-flight worker's unsaved intermediate evidence; the interrupted job is marked failed. Normal cancellation after a completed baseline preserves analysis evidence. Single-run and pre-baseline failure records do not claim completed hydraulic conclusions.

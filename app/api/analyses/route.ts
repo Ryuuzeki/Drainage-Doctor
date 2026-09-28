@@ -6,6 +6,8 @@ import {validateAnalysisConfig,type AnalysisEvidence,type AnalysisConfig} from '
 import type {AnalysisRecord} from '@/lib/analysis-record';
 import type {RunRecord} from '@/lib/swmm-results';
 import type {Project} from '@/lib/drainage';
+import {classifyError,suggestedAction} from '@/lib/errors';
+function domainResponse(error:unknown,status:number){const errorCode=classifyError(error);return Response.json({error:(error as Error).message,errorCode,suggestedAction:suggestedAction(errorCode)},{status})}
 export const dynamic='force-dynamic';
 async function find(id:string,owner:string){const row=await database().prepare('SELECT data FROM analysis_jobs WHERE id = ? AND owner = ?').bind(id,owner).first<{data:string}>();return row?JSON.parse(row.data) as AnalysisRecord:null}
 async function sync(record:AnalysisRecord,owner:string){
@@ -43,7 +45,7 @@ export async function GET(request:Request){try{
  const projectId=params.get('projectId');if(!projectId)return jsonError('Project required.');
  const rows=await database().prepare('SELECT data FROM analysis_jobs WHERE owner = ? AND project_id = ? ORDER BY created_at DESC LIMIT 30').bind(owner,projectId).all<{data:string}>();
  return Response.json({analyses:rows.results.map(r=>JSON.parse(r.data))});
- }catch(e){return jsonError((e as Error).message,503)}}
+ }catch(e){return domainResponse(e,503)}}
 export async function POST(request:Request){try{
  const owner=await identity();if(!owner)return jsonError('Sign in to run autopsy.',401);if(!sameOrigin(request))return jsonError('Request origin rejected.',403);
  const raw=await request.text();if(raw.length>6000)return jsonError('Request too large.',413);
@@ -61,7 +63,7 @@ export async function POST(request:Request){try{
  await database().prepare('INSERT INTO analysis_jobs (id, owner, project_id, model_hash, status, data, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(record.id,owner,record.projectId,record.modelHash,record.status,JSON.stringify(record),record.createdAt).run();
  try{await solverRequest('/jobs',{method:'POST',body:JSON.stringify({id:record.id,kind:'autopsy',input,inputHash:b.modelHash,config})})}catch(e){record.status='failed';record.error=(e as Error).message;await database().prepare('UPDATE analysis_jobs SET status = ?, data = ? WHERE id = ? AND owner = ?').bind(record.status,JSON.stringify(record),record.id,owner).run()}
  await auditStatement(owner,b.projectId,`Autopsy requested: ${record.id}; hotspot ${config.targetNode}; model ${b.modelHash}`).run();return Response.json({analysis:record});
- }catch(e){return jsonError((e as Error).message,400)}}
+ }catch(e){return domainResponse(e,400)}}
 export async function DELETE(request:Request){try{
  const owner=await identity();if(!owner)return jsonError('Sign in to manage analyses.',401);if(!sameOrigin(request))return jsonError('Request origin rejected.',403);
  const parsed=z.object({id:z.string().uuid()}).strict().safeParse(await request.json());if(!parsed.success)return jsonError('Invalid cancellation.');

@@ -12,7 +12,7 @@ test('normalized elasticity and monotonicity use bounded local response',()=>{
  assert.equal(normalizedElasticity(100,10,20),2);
  assert.equal(monotonicity([{percent:5,asset:'C1',family:'diameter',status:'TESTED',volumeReduction:2,systemVolumeReduction:1,elasticity:0.4},{percent:10,asset:'C1',family:'diameter',status:'TESTED',volumeReduction:5,systemVolumeReduction:2,elasticity:0.5}]),'MONOTONIC');
  const out=buildNormalizedDiagnosis([{spec:{kind:'diameter',asset:'C1',percent:5,targetNode:'J1'},changes:[],rationale:'',comparison:{targetNode:'J1',volumeReduction:5,depthReduction:1,durationReduction:1,systemVolumeReduction:2,worsenedNodes:[],qualityPassed:true,eligible:true,warnings:[]},score:1,status:'ELIGIBLE FOR REVIEW'}],100);
- assert.equal(out.ranking[0].localElasticity,1);
+ assert.equal(out.ranking[0].localElasticity,null,'a comparison without solver evidence cannot support normalized elasticity');
 });
 
 test('model validation rejects only real external file references',()=>{

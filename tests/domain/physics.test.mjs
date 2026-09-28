@@ -94,10 +94,10 @@ test('Complete autopsy loop runs actual SWMM, declares bounded search and solves
   return {inputHash:await sha256(source),reportHash:await sha256(raw.report),outputHash:'test-harness-no-binary',engineHash:'test-harness',enginePackage:'@fileops/swmm-wasm-web@0.0.4',executedAt:new Date().toISOString(),elapsedMs:0,result:parseReport(raw.report),verification:'SERVER VERIFIED',warnings:[]};
  };
  const config=defaultAnalysisConfig('J1'),analysis=await runAutopsy(input,config,solve);
- assert.ok(analysis.search.selected,JSON.stringify(analysis.search));assert.equal(analysis.storms.length,3);assert.ok(seen.length>=10);
- assert.equal(analysis.modelHash,await sha256(input));assert.equal(analysis.search.selected.status,'ELIGIBLE FOR REVIEW');
+ assert.ok(analysis.repairSearch.selected.firstAdmissible,JSON.stringify(analysis.repairSearch));assert.equal(analysis.robustness.scenarios.length,3);assert.ok(seen.length>=10);
+ assert.equal(analysis.modelHash,await sha256(input));assert.equal(analysis.repairSearch.selected.firstAdmissible.status,'ELIGIBLE FOR REVIEW');
  for(const h of analysis.hypotheses.filter(h=>h.run))assert.equal(h.run.inputHash,await sha256(generateExperiment(input,h.spec).input));
- for(const s of analysis.storms){assert.ok(s.baseline&&s.intervention);assert.notEqual(s.baseline.inputHash,s.intervention.inputHash);assert.equal(s.baseline.result.engineVersion,'5.2.2')}
+ for(const s of analysis.robustness.scenarios){assert.ok(s.baseline&&s.intervention);assert.notEqual(s.baseline.inputHash,s.intervention.inputHash);assert.equal(s.baseline.result.engineVersion,'5.2.2')}
  assert.deepEqual(config,defaultAnalysisConfig('J1'));
- assert.ok(analysis.search.attempts.slice(0,-1).every(h=>h.spec.percent<analysis.search.selected.spec.percent));
+ assert.ok(analysis.repairSearch.selected.attempts.slice(0,-1).every(h=>h.spec.percent<analysis.repairSearch.selected.firstAdmissible.spec.percent));
 });

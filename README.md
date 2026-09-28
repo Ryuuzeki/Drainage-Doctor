@@ -14,21 +14,22 @@ A flooding map identifies symptoms. DrainageDoctor tests competing explanations 
 2. Run a trusted baseline and inspect numerical quality and physical warnings.
 3. Select a hotspot and run **Hotspot Autopsy**.
 4. Review competing hypotheses, rejected experiments, and untested mechanisms.
-5. Inspect the smallest admissible magnitude found in the declared one-asset search.
+5. Compare equivalent ascending grids across the shortlisted physical candidates, then inspect the preferred tested repair.
 6. Compare actual baseline/intervention runs under three configurable forcing scenarios.
-7. Export evidence JSON, immutable INP files, SWMM reports, and binary outputs.
+7. Export evidence JSON, a paginated engineering PDF, immutable INP files, SWMM reports, and binary outputs.
 
 ## Implemented features
 
 - Real SWMM 5.2.2 execution in an isolated server child process.
 - Authenticated solver queue with cancellation, per-run and per-job timeouts, worker crash retry, immutable artifacts, and SHA-256 verification.
-- Automatic neighborhood hypothesis generation: up to two assets per family, with normalized 5%, 10% and 20% response tests for each representative family.
+- Quick mode: one nearby asset per supported family, 5/10/20% response tests, top two physical repair candidates, three scenarios, maximum 36 solver invocations.
+- Detailed mode: up to two nearby assets per family, the same response magnitudes, top three physical candidates, three or four scenarios, maximum 60 solver invocations.
 - Six experiment families: circular conduit diameter, Manning roughness, existing functional storage, supported inlet capture limits, fixed-stage tailwater, and imperviousness or external-inflow sensitivity.
 - Numerical screening, network-wide worsening checks, and a bounded ascending repair search.
 - Three real paired stress scenarios using embedded rainfall or direct FLOW input multipliers.
 - Hydrology integrity inspector and configurable engineering plausibility warnings.
 - Saved run history, model/engine provenance, evidence downloads, and project audit history.
-- V3 normalized sensitivity curves, monotonicity checks, cross-asset repair candidates, hydrology provenance, explicit error taxonomy, and immutable engineering-report PDF export.
+- V4 canonical diagnosis, median local elasticity, response reliability, candidate-specific robustness, enforced solver budget and evidence references. V2/V3 remain readable through a read-only adapter.
 
 ## Architecture
 
@@ -49,7 +50,7 @@ The pinned engine is `@fileops/swmm-wasm-web@0.0.4`, reporting SWMM **5.2.2**. I
 
 `SERVER VERIFIED` means the configured server executed and parsed the model; it does not certify model accuracy or engineering suitability. Clients cannot submit report text to create completed results. Old browser-executed records retain their historical trust labels.
 
-Limits: 500 nodes, 2,000 conduits, a seven-day event, at least a 30-second reporting interval, 120 seconds per simulation and 15 minutes per analysis job. Failed worker processes are retried once; hydraulic input errors are not retried. Jobs interrupted by a service restart become failed records and require explicit resubmission. Terminal results cannot be overwritten through the API.
+Limits: 500 nodes, 2,000 conduits, a seven-day event, at least a 30-second reporting interval, 120 seconds per simulation and 15 minutes per analysis job. Single-run worker crashes are retried once; autopsy workers are not retried outside their declared budget. Failed runs consume budget. Completed baseline, diagnostic and repair evidence survives autopsy cancellation/timeouts as an INCOMPLETE analysis. A failure before baseline completion has no usable analysis evidence. Jobs interrupted by a service restart become failed records and require explicit resubmission. Terminal results cannot be overwritten through the API.
 
 The Docker Compose service adds a 512 MB container memory limit, one CPU, process limits, a read-only root filesystem and an unprivileged user. Running directly with Node provides a worker heap limit and wall-clock timeout, but not Docker's whole-process memory/CPU limits. Keep the solver token private and use a protected HTTPS connection when the service is remote. Back up the solver volume along with D1/R2.
 
@@ -66,9 +67,15 @@ The Docker Compose service adds a 512 MB container memory limit, one CPU, proces
 
 SWMM ignores Qmax for custom RATING inlet curves; these are excluded. Tailwater and runoff experiments diagnose sensitivity but are not automatically recommended as physical repairs. No new storage facility or construction-ready inlet is designed.
 
-Each hypothesis starts from the original baseline. Ranking places admissibility before a disclosed score: hotspot volume reduction + 20 × fractional network volume reduction − 0.1 × intervention percentage. There is no invented cost or confidence estimate.
+Each hypothesis starts from the original baseline. V4 uses the hotspot flood volume as the denominator, calculates elasticity at each magnitude and takes the median of numerically valid points. Rankings prioritize numerical validity, network safety, response reliability, median elasticity, absolute benefit, nearby asset order and stable family/asset IDs. The chart bar width uses elasticity; absolute reduction at 20% appears separately.
 
-V3 normalizes representative family response curves at `[5, 10, 20]%` using `E = (ΔY/Y0) / (ΔX/X0)`, retains failed and untested families, and labels the ranking as modeled sensitivity. Repair candidates cover the top physical assets across conduit capacity, friction, storage and nearby inlet; each candidate is searched on `[5, 10, 20, 30, 50, 75, 100]%` within the run budget and stops at its first admissible result. This is the smallest **tested** magnitude in that search, not a global optimum. Three paired scenarios then evaluate numerical quality, ponding and network harm. Robustness is reported as a count of tested scenarios passing screens.
+Elasticity is `E = (ΔY/Y0) / (|ΔX|/X0)`: positive means improvement in the declared intervention direction, including roughness reduction. STRONG reliability requires at least three valid monotonic points, no network harm, median elasticity >=0.05, and relative coefficient spread <=1. MODERATE requires at least two monotonic positive points; small or limited responses are WEAK, while non-monotonic, contradictory or numerically failed responses are UNRELIABLE. These are transparent screening rules, not probabilistic confidence.
+
+Physical candidates use equivalent `[5, 10, 20, 30, 50, 75, 100]%` grids, clipped to family bounds. Search advances one magnitude across all pending candidates before the next magnitude. Exact autopsy attempts are reused. Each candidate stops at its first admissible magnitude. Selection prioritizes admissibility, smaller magnitude, normalized diagnosis rank, hotspot benefit and network benefit. Boundary and runoff mechanisms remain diagnostic only.
+
+Only the final selected repair undergoes paired forcing tests. Every pair records that exact repair spec, expected input hashes and solver input/report/OUT/engine references. Robustness is derived from completed, correctly bound pairs; non-selected candidates remain UNTESTED. One failed scenario means FAIL, and interrupted or missing pairs cannot produce PASS. The budget reserves two runs per required scenario. If a full fair search round cannot fit, the remaining search is explicitly INCOMPLETE.
+
+The V4 evidence object is the canonical source for summary, charts, JSON and PDF. Historical V2/V3 numbers are not reanalyzed; legacy robustness without V4 binding is labeled UNTESTED in the compatibility view. PDF sections cover diagnosis, baseline, response curves, all candidate attempts, before/after, network harm, scenarios, hydrology, numerical warnings, hashes and limitations with no silent truncation.
 
 ## Screenshots / demo
 
@@ -87,6 +94,8 @@ npm run build
 ```
 
 With both local services running, `node --experimental-strip-types scripts/smoke-local.mjs` creates a labeled test project and verifies import → baseline → autopsy → evidence download, including rejection of forged client reports.
+
+The smoke test also saves the actual API PDF and V4 JSON under ignored `outputs/v4/`. Optional browser verification: set `PLAYWRIGHT_MODULE` to an installed Playwright module URL and, if necessary, `BROWSER_CHANNEL=msedge`, then run `node scripts/check-v4-browser.mjs`. It checks the real saved analysis on desktop/mobile, verifies chart widths against elasticity and checks displayed robustness. See [V4 audit](docs/v4-audit.md) for the regression-to-requirement map.
 
 GitHub Actions runs all three checks after `npm ci` on pushes and pull requests. Tests execute the real pinned SWMM engine and cover deterministic results, mass balance, unit retention, transferred flooding, Manning capacity, hydrograph integration, pipe/friction/storage/inlet/tailwater sensitivity, extreme and dry inputs, hydrology warnings, and the full autopsy/storm loop. HTTP service tests cover authentication, input immutability, artifact hashes, real worker execution and timeout behavior. A stored native SWMM 5.2.4 report provides an independent benchmark comparison at report precision.
 
